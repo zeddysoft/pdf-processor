@@ -1,0 +1,19 @@
+{
+  "name": "my-service",
+  "version": "1.0.0",
+  "description": "",
+  "main": "handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "serverless-offline": "^4.4.2"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.409.0",
+    "pdfjs-dist": "^2.0.943",
+    "uuid": "^3.3.2"
+  }
+}
