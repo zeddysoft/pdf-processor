@@ -249,7 +249,7 @@ var exported_symbols = Object.keys(exports);
 
 exports.setStubs = function(namespace) {
     exported_symbols.forEach(function(key) {
-        console.assert(!(key in namespace), 'property should not be set: ' + key);
+        // console.assert(!(key in namespace), 'property should not be set: ' + key);
         namespace[key] = exports[key];
     });
 };

@@ -1,24 +1,26 @@
 'use strict';
 
-module.exports.hello = async (event, context) => {
+module.exports.getAutomobiles = (event, context, callback) => {
+
     let requestBody = JSON.parse(event.body);
 
     require('./domstubs.js').setStubs(global);
     const AWS = require('aws-sdk');
     const pdfjsLib = require('pdfjs-dist');
-    const https = require("https");
+    const https = require('https');
     const uuid = require('uuid/v1');
     let imageUrls = [];
     let extractedImages = [];
+    let automobiles = [];
 
     //initialize amazon with required credentials
     let s3 = new AWS.S3({
-        accessKeyId: 'AKIAIAGETVESWNQMI32A',
-        secretAccessKey: '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'
+        accessKeyId: 'AKIAI4WIPC4WSJUCR6RA',
+        secretAccessKey: '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'
     });
 
     //fetch pdf data from supplied URL
-    https.get(requestBody.pdfUrl, (response) => {
+    return https.get(requestBody.pdfUrl, (response) => {
 
         let data = [];
 
@@ -27,128 +29,144 @@ module.exports.hello = async (event, context) => {
         });
 
         response.on('end', () => {
-            data = Buffer.concat(data); // do something with data
+            // data = Buffer.concat(data); // do something with data
 
-            const  automobileLabels = ['Machine','Engine', 'Motor', 'Vehicle','Transportation','Automobile'];
-            data = new Uint8Array(data);
-            let imageCount = 0;
+            const automobileLabels = ['Machine', 'Engine', 'Motor', 'Vehicle', 'Transportation', 'Automobile'];
+            let rawImageFile = new Uint8Array(Buffer.concat(data));
 
-            // function processImage(imageData,imageCount) {
             function processImage() {
 
+                let lastPromise = Promise.resolve();
+                for (let i = 0; i < extractedImages.length; i++) {
+                    let base64Image = extractedImages[i];
+                    let imageBytes = getImageBytes(base64Image);
+                    lastPromise = lastPromise.then(checkImageLabel.bind(null, imageBytes, i));
+                }
 
-                console.log("processing image");
-                let jpg = true;
-                let base64Image = imageData.split("data:image/jpeg;base64,")[1];
+                lastPromise.then(() => {
+                    //upload images to s3.
+                    let lastPromise = Promise.resolve();
+                    automobiles.forEach((automobileImage) => {
+                        lastPromise = lastPromise.then(uploadToS3.bind(null, getImageBytes(automobileImage)));
+                    });
+
+                    lastPromise.then(() => {
+                        sendResponse();
+                    })
+                });
+            }
+
+            function uploadToS3(imageBytes) {
+                let u = uuid();
+                return new Promise((resolve, reject) => {
+                    let buffer = Buffer.from(imageBytes, 'base64');
+                    const bucketName = 'autopics';
+
+                    let params = {
+                        Bucket: bucketName, //this must have been created on amazon s3
+                        Key: u,
+                        Body: buffer,
+                        ContentEncoding: 'base64',
+                        ContentType: 'image/jpeg'
+
+                    };
+                    s3.putObject(params, (error, data) => {
+                        if (error) {
+                            console.log(`error uploading to s3  ${error}`);
+                            reject(error);
+                        } else {
+                            let imageUrl = `https://s3.amazonaws.com/${bucketName}/${u}`;
+                            imageUrls.push({url: imageUrl});
+                            console.log('image successfully uploaded' + JSON.stringify(data));
+                            resolve('image upload success');
+                        }
+                    });
+
+                });
+            }
+
+            function getImageBytes(base64Image) {
                 let image = null;
+                let jpg = true;
                 try {
                     image = atob(base64Image);
-                }catch (e) {
+                } catch (e) {
                     jpg = false;
                 }
                 if (jpg === false) {
                     try {
                         image = atob(base64Image);
                     } catch (e) {
-                        console.log(e);
-                        console.log("Not an image file Rekognition can process");
+                        console.log(`Not an image file Rekognition can process ${e}`);
                         return;
                     }
                 }
-                var length = image.length;
+                let length = image.length;
                 let imageBytes = new ArrayBuffer(length);
                 let ua = new Uint8Array(imageBytes);
                 for (let i = 0; i < length; i++) {
                     ua[i] = image.charCodeAt(i);
                 }
-
-                checkImageLabel(imageBytes, (isAutomobile) => {
-                    if(isAutomobile){
-                        console.log(`Image  ${imageCount} is an automobile`);
-                        uploadImagetoS3(base64Image,imageCount);
-                    }else {
-                        console.log(`Image  ${imageCount} is not an automobile`);
-                    }
-
-                });
+                return imageBytes;
             }
 
-            function uploadImagetoS3(imageBytes,imageCount) {
-                let buffer = Buffer.from(imageBytes,'base64');
-                const bucketName = 'autopics';
-                let uuid = uuid();
-
-                console.log("uploading image " + imageCount + " to s3");
-                var params = {
-                    Bucket: bucketName, //this must have been created on amazon s3
-                    Key: uuid,
-                    Body: buffer,
-                    ContentEncoding: 'base64',
-                    ContentType: 'image/jpeg'
-
-                };
-                s3.putObject( params, ( error, data ) => {
-                    if( error ){
-                        console.log( "error uploading to s3" + error );
-                    }else{
-                        let imageUrl = `https://s3.amazonaws.com/${bucketName}/${uuid}`;
-                        imageUrls.push({url: imageUrl});
-                        console.log('image successfully uploaded' + JSON.stringify(data));
-                    }
-                });
-            }
 
             //check whether image is an automobile
-            function checkImageLabel(imageBytes,callback) {
+            function checkImageLabel(imageBytes, imageIndex) {
                 let rekognition = new AWS.Rekognition();
                 let params = {
                     Image: {
                         Bytes: imageBytes
                     }
                 };
-                 rekognition.detectLabels(params, (err, data) => {
-                    if (err) {
-                        console.log(`error detecting labels for an image: ${err}`);
-                        callback(false);
-                    }
-                    else {
-                        console.log(JSON.stringify(data));
-                        let isValidAutoLabel = false;
-                        let imageLabels = data.Labels;
-                        //did not use a forEach
-                        for(let imageLabel of imageLabels){
-                            if(automobileLabels.includes(imageLabel.Name)){
-                                isValidAutoLabel = true;
-                                break;
+
+                return new Promise((resolve, reject) => {
+                    rekognition.detectLabels(params, (err, data) => {
+                        if (err) {
+                            console.log(`error detecting labels for an image: ${err}`);
+                            reject(err);
+                        } else {
+                            console.log(JSON.stringify(data));
+                            let isValidAutoLabel = false;
+                            let imageLabels = data.Labels;
+
+                            for (let imageLabel of imageLabels) {
+                                if (automobileLabels.includes(imageLabel.Name)) {
+                                    isValidAutoLabel = true;
+                                    break;
+                                }
                             }
+                            if (isValidAutoLabel) {
+                                automobiles.push(extractedImages[imageIndex]);
+                            }
+                            resolve(data);
                         }
-                        callback(isValidAutoLabel);
-                    }
+                    });
                 });
             }
 
             let loadingTask = pdfjsLib.getDocument({
-                data: data,
+                data: rawImageFile,
                 nativeImageDecoderSupport: pdfjsLib.NativeImageDecoding.DISPLAY,
             });
 
-            loadingTask.promise.then(function(doc) {
+            loadingTask.promise.then(function (doc) {
                 let numPages = doc.numPages;
                 console.log('# Document Loaded');
                 console.log(`Number of Pages:  ${numPages}`);
 
-                let lastPromise = Promise.resolve(); // will be used to chain promises
+                let lastPromise = Promise.resolve();
                 let loadPage = function (pageNum) {
                     return doc.getPage(pageNum).then(page => {
                         console.log(`# Page ${pageNum}`);
 
                         return page.getOperatorList().then(opList => {
-                            var svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
+                            let svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
                             svgGfx.embedFonts = true;
-                            for (let i=0; i < opList.fnArray.length; i++) {
+                            for (let i = 0; i < opList.fnArray.length; i++) {
                                 if (opList.fnArray[i] === pdfjsLib.OPS.paintJpegXObject) {
                                     let imageInfo = page.objs.get(opList.argsArray[i][0]);
-                                    extractedImages.push(imageInfo._src);
+                                    extractedImages.push(imageInfo._src.split('data:image/jpeg;base64,')[1]);
                                 }
                             }
                         });
@@ -159,13 +177,21 @@ module.exports.hello = async (event, context) => {
                     lastPromise = lastPromise.then(loadPage.bind(null, i));
                 }
                 return lastPromise;
-            }).then( () => {
-                    processImage();
+            }).then(() => {
                     console.log('# End of Document')
+                    return processImage();
                 }
-                , () => console.error('Error: ' + err));
+                , (err) => console.error(`Error: ${err}`));
 
         });
     });
 
+    function sendResponse() {
+        callback(null, {
+            statusCode: 200,
+            body: JSON.stringify({
+                pdfUrls: imageUrls
+            }),
+        });
+    }
 };
