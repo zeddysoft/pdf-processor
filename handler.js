@@ -15,8 +15,8 @@ module.exports.getAutomobiles = (event, context, callback) => {
 
     //initialize amazon with required credentials
     let s3 = new AWS.S3({
-        accessKeyId: 'AKIAI4WIPC4WSJUCR6RA',
-        secretAccessKey: 'XvgIKO/mgNz8lGqKZ4z0KAV2aEjQ0Q55bDMJCTMa'
+        accessKeyId: '', //replace with your access key
+        secretAccessKey: '' // replace with your secret key
     });
 
     //fetch pdf data from supplied URL
@@ -29,8 +29,6 @@ module.exports.getAutomobiles = (event, context, callback) => {
         });
 
         response.on('end', () => {
-            // data = Buffer.concat(data); // do something with data
-
             const automobileLabels = ['Machine', 'Engine', 'Motor', 'Vehicle', 'Transportation', 'Automobile'];
             let rawImageFile = new Uint8Array(Buffer.concat(data));
 
