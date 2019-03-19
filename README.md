@@ -1,7 +1,5 @@
 # pdf-processor
-A script to retrieve image of automobiles from a pdf spanning pages.
-
-The action items of this script can be summarized as follows.
+An AWS Lamda function with the following capabilities.
 
 1. Read a pdf file from a given url
 2. Extract all images in all the pages of the pdf document.
